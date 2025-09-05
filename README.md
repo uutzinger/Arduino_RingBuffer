@@ -2,10 +2,10 @@
 
 Ring buffer Library with:
 
-- push, 
-- pop, 
-- peek, 
-- clear 
+- push
+- pop
+- peek
+- clear
 - available
 
 functions.
@@ -24,4 +24,4 @@ ChatGPT
 
 # License
 
-See [LICENSE](LICENSE.md).
+See [LICENSE](LICENSE.txt).

@@ -5,7 +5,6 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
 
-#include <Arduino.h>    // or <cstddef>, <cstring> if not using Arduino
 #include <string.h>     // for memcpy
 
 template <typename T, size_t N>
