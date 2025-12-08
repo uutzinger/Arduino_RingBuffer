@@ -1,16 +1,19 @@
 // Example Arduino Sketch using RingBuffer with Interrupts
+#include <Arduino.h>
 #include "RingBuffer.h"
+
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
 
 // Define a RingBuffer for uint8_t with a size of 16
 RingBuffer<uint8_t, 16> myBuffer;
 
 volatile bool dataReady = false;
 
-void ISR_function() {
-    noInterrupts(); // Disable interrupts during buffer modification
+void IRAM_ATTR ISR_function() {
     myBuffer.push(42); // Example data
     dataReady = true;
-    interrupts(); // Re-enable interrupts
 }
 
 void setup() {
@@ -18,6 +21,7 @@ void setup() {
     delay(1000);
     Serial.println("RingBuffer Example with Interrupts");
 
+    pinMode(2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(2), ISR_function, RISING);
 }
 

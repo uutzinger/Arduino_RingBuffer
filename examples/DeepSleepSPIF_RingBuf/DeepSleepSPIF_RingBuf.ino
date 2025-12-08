@@ -1,7 +1,18 @@
 // Example Arduino Sketch using RingBuffer with SPIFFS
+#include <Arduino.h>
 #include "RingBuffer.h"
 #include "FS.h"
 #include "SPIFFS.h"
+
+#if !defined(ARDUINO_ARCH_ESP32)
+#error "This example targets ESP32 boards that provide SPIFFS and deep sleep APIs."
+#endif
+
+#include "esp_sleep.h"
+
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
 
 #define BUFFER_SIZE 16
 #define BUFFER_FILE "/ringbuffer.dat"
@@ -11,11 +22,9 @@ RingBuffer<uint8_t, BUFFER_SIZE> myBuffer;
 
 volatile bool dataReady = false;
 
-void ISR_function() {
-    noInterrupts(); // Disable interrupts during buffer modification
+void IRAM_ATTR ISR_function() {
     myBuffer.push(42); // Example data
     dataReady = true;
-    interrupts(); // Re-enable interrupts
 }
 
 // Save buffer contents to SPIFFS
@@ -65,6 +74,7 @@ void setup() {
 
     loadBufferFromSPIFFS(); // Restore buffer from SPIFFS
 
+    pinMode(2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(2), ISR_function, RISING);
 }
 

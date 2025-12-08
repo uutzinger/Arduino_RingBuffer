@@ -1,4 +1,12 @@
+#include <Arduino.h>
 #include "RingBuffer.h"
+
+#if !defined(ARDUINO_ARCH_ESP32)
+#error "This example targets ESP32 boards with RTC memory support."
+#endif
+
+#include "esp_sleep.h"
+#include "esp_system.h"
 
 // Store buffer in RTC memory (persists across deep sleep)
 RTC_DATA_ATTR RingBuffer<uint8_t, 16> myBuffer;

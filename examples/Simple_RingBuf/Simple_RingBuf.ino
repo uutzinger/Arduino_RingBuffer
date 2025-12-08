@@ -1,4 +1,5 @@
 // Example Arduino Sketch using RingBuffer
+#include <Arduino.h>
 #include "RingBuffer.h"
 
 // Define a RingBuffer for uint8_t with a size of 16

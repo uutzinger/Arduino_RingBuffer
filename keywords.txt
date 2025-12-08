@@ -12,6 +12,8 @@ RingBuffer	KEYWORD1
 #######################################
 push          KEYWORD2
 pop           KEYWORD2
+peek          KEYWORD2
+consume       KEYWORD2
 available     KEYWORD2
 capacity      KEYWORD2
 clear         KEYWORD2
