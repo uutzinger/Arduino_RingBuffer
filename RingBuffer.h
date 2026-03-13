@@ -3,7 +3,8 @@
 //
 // Ring buffer (circular buffer) implementation in C++
 // Thread safe on ESP32 using per-instance spinlocks
-// Template class supporting any data type T
+// Template class supporting trivially copyable data types T
+// Supports caller-provided storage for retained-memory use cases
 // Buffer size N must be a power of 2 for efficiency
 //
 // push
@@ -34,7 +35,7 @@
 #include <stdint.h>     // for uint8_t, uint16_t
 #include <type_traits>  // for std::conditional
 
-#if defined(ESP32)
+#if defined(ARDUINO_ARCH_ESP32)
     # include "freertos/FreeRTOS.h"
     # include "freertos/portmacro.h"
 #endif
@@ -52,11 +53,33 @@
 template <typename T, size_t N>
 class RingBuffer {
 public:
-    RingBuffer() : head(0), tail(0), count(0) {
-        #if defined(ESP32)
-        mux_ = portMUX_INITIALIZER_UNLOCKED;
-        #endif
+    static_assert(std::is_trivially_copyable<T>::value,
+                  "RingBuffer requires trivially copyable element types");
+
+    // Select optimal index type based on buffer size, including a full-buffer count.
+    using IndexType = typename std::conditional<
+        (N <= UINT8_MAX), uint8_t,
+        typename std::conditional<(N <= UINT16_MAX), uint16_t, size_t>::type
+    >::type;
+
+    struct Storage {
+        T buffer[N];
+        IndexType head;
+        IndexType tail;
+        IndexType count;
+        uint32_t magic;
+    };
+
+    RingBuffer() : storage_(&localStorage_) {
+        initializeMux();
+        initializeStorage(false);
     }
+
+    explicit RingBuffer(Storage& storage, bool preserve = false) : storage_(&storage) {
+        initializeMux();
+        initializeStorage(preserve);
+    }
+
     // Push data into the ring buffer
     // data: pointer to data that will be added to the buffer
     // data_len: number of data elements
@@ -78,35 +101,42 @@ public:
 
     size_t available() const {
         // Snapshot under critical section to avoid torn reads
-        #if defined(ESP32)
+        #if defined(ARDUINO_ARCH_ESP32)
             RB_CRITICAL_ENTER();
-            size_t c = count;
+            size_t c = storage_->count;
             RB_CRITICAL_EXIT();
-        return c;
+            return c;
         #else
-            return count;
+            return storage_->count;
         #endif
     }
     size_t capacity() const { return N; }
     void clear();
 
 private:
-    T buffer[N]; // fixed size buffer
-
-    // Select optimal index type based on buffer size
-    using IndexType = typename std::conditional<
-        (N <= 256), uint8_t,
-        typename std::conditional<(N <= 65536), uint16_t, size_t>::type
-    >::type;
-
-    IndexType head;
-    IndexType tail;
-    IndexType count;
-
-    static constexpr bool isPowerOfTwo(size_t n) { return (n & (n - 1)) == 0; }
+    static constexpr bool isPowerOfTwo(size_t n) { return n != 0 && (n & (n - 1)) == 0; }
     static_assert(isPowerOfTwo(N), "RingBuffer capacity must be a power of 2 for efficiency");
+    static constexpr uint32_t kStorageMagic = 0x52425546UL; // 'RBUF'
 
-#if defined(ESP32)
+    void initializeMux() {
+        #if defined(ARDUINO_ARCH_ESP32)
+            mux_ = portMUX_INITIALIZER_UNLOCKED;
+        #endif
+    }
+
+    void initializeStorage(bool preserve) {
+        if (!preserve || storage_->magic != kStorageMagic) {
+            storage_->head = 0;
+            storage_->tail = 0;
+            storage_->count = 0;
+        }
+        storage_->magic = kStorageMagic;
+    }
+
+    Storage localStorage_;
+    Storage* storage_;
+
+#if defined(ARDUINO_ARCH_ESP32)
     // Per-instance spinlock for critical sections. Mark mutable so it can be used in const methods.
     mutable portMUX_TYPE mux_;
 #endif
@@ -122,9 +152,17 @@ size_t RingBuffer<T, N>::push(const T& data, bool overwrite) {
 template <typename T, size_t N>
 size_t RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
     if (data_len == 0) return 0;
+
+    // If overwrite is enabled and the caller provides more than the capacity,
+    // only the newest N elements can remain in the buffer.
+    if (overwrite && data_len > N) {
+        data += data_len - N;
+        data_len = N;
+    }
+
     RB_CRITICAL_ENTER();
 
-    size_t available_space = N - count;
+    size_t available_space = N - storage_->count;
     if (data_len > available_space && !overwrite) {
         RB_CRITICAL_EXIT();
         return 0;
@@ -133,27 +171,28 @@ size_t RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
     if (data_len > available_space) {
         // Overwriting: advance tail to free up space
         size_t overflow = data_len - available_space;
-        tail = (tail + overflow) & (N - 1);
+        storage_->tail = (storage_->tail + overflow) & (N - 1);
     }
 
     // Optimized single-element push
     if (data_len == 1) {
-        buffer[head] = *data;
+        storage_->buffer[storage_->head] = *data;
     } else {
         // Multi-element push
-        size_t firstPart = RB_MIN(data_len, N - head);
-        memcpy(&buffer[head], data, firstPart * sizeof(T));
+        size_t firstPart = RB_MIN(data_len, N - storage_->head);
+        memcpy(&storage_->buffer[storage_->head], data, firstPart * sizeof(T));
 
         size_t secondPart = data_len - firstPart;
         if (secondPart > 0) {
             // Wrap around the buffer and write remaining bytes at the beginning
-            memcpy(buffer, data + firstPart, secondPart * sizeof(T));
+            memcpy(storage_->buffer, data + firstPart, secondPart * sizeof(T));
         }
     }
 
     // Update head and count
-    head = (head + data_len) & (N - 1);
-    count = RB_MIN(static_cast<size_t>(N), static_cast<size_t>(count + data_len));
+    storage_->head = (storage_->head + data_len) & (N - 1);
+    storage_->count = static_cast<IndexType>(
+        RB_MIN(static_cast<size_t>(N), static_cast<size_t>(storage_->count) + data_len));
 
     RB_CRITICAL_EXIT();
     return data_len;
@@ -171,32 +210,32 @@ size_t RingBuffer<T, N>::pop(T* output, size_t len) {
     if (len == 0) return 0;
     RB_CRITICAL_ENTER();
 
-    if (count == 0) {
+    if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
         return 0; // Buffer empty
     }
 
-    size_t charsToRead = RB_MIN(len, static_cast<size_t>(count));
-    size_t firstPart   = RB_MIN(charsToRead, N - tail);
+    size_t charsToRead = RB_MIN(len, static_cast<size_t>(storage_->count));
+    size_t firstPart   = RB_MIN(charsToRead, N - storage_->tail);
 
     if (charsToRead == 1) {
-        *output = buffer[tail];
+        *output = storage_->buffer[storage_->tail];
     } else {
-        memcpy(output, &buffer[tail], firstPart * sizeof(T));
+        memcpy(output, &storage_->buffer[storage_->tail], firstPart * sizeof(T));
         size_t secondPart = charsToRead - firstPart;
         if (secondPart > 0) {
             // Wrap around the buffer and read remaining bytes from the beginning
-            memcpy(output + firstPart, buffer, secondPart * sizeof(T));
+            memcpy(output + firstPart, storage_->buffer, secondPart * sizeof(T));
         }
     }
 
-    tail = (tail + charsToRead) & (N - 1);
-    count -= charsToRead;
+    storage_->tail = (storage_->tail + charsToRead) & (N - 1);
+    storage_->count = static_cast<IndexType>(static_cast<size_t>(storage_->count) - charsToRead);
 
     // Reset tail & head when buffer becomes empty
-    if (count == 0) {
-        tail = 0;
-        head = 0;
+    if (storage_->count == 0) {
+        storage_->tail = 0;
+        storage_->head = 0;
     }
 
     RB_CRITICAL_EXIT();
@@ -207,11 +246,11 @@ size_t RingBuffer<T, N>::pop(T* output, size_t len) {
 template <typename T, size_t N>
 size_t RingBuffer<T, N>::peek(T& output) const {
     RB_CRITICAL_ENTER();
-    if (count == 0) {
+    if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
         return 0; // Buffer empty
     }
-    output = buffer[tail]; // Read the element at tail without modifying it
+    output = storage_->buffer[storage_->tail]; // Read the element at tail without modifying it
     RB_CRITICAL_EXIT();
     return 1;
 }
@@ -221,21 +260,21 @@ template <typename T, size_t N>
 size_t RingBuffer<T, N>::peek(T* output, size_t len) const {
     if (len == 0) return 0; // Nothing to peek
     RB_CRITICAL_ENTER();
-    if (count == 0) {
+    if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
         return 0; // Nothing to peek
     }
 
-    size_t peekLen = RB_MIN(len, static_cast<size_t>(count));
-    size_t firstPart = RB_MIN(peekLen, N - tail);
+    size_t peekLen = RB_MIN(len, static_cast<size_t>(storage_->count));
+    size_t firstPart = RB_MIN(peekLen, N - storage_->tail);
 
     // Copy first segment
-    memcpy(output, &buffer[tail], firstPart * sizeof(T));
+    memcpy(output, &storage_->buffer[storage_->tail], firstPart * sizeof(T));
 
     // Copy second segment if wrap-around occurs
     size_t secondPart = peekLen - firstPart;
     if (secondPart > 0) {
-        memcpy(output + firstPart, buffer, secondPart * sizeof(T));
+        memcpy(output + firstPart, storage_->buffer, secondPart * sizeof(T));
     }
 
     RB_CRITICAL_EXIT();
@@ -246,13 +285,13 @@ size_t RingBuffer<T, N>::peek(T* output, size_t len) const {
 template <typename T, size_t N>
 size_t RingBuffer<T, N>::consume() {
     RB_CRITICAL_ENTER();
-    if (count == 0) {
+    if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
         return 0; // empty
     }
-    tail = (tail + 1) & (N - 1);
-    --count;
-    if (count == 0) { tail = 0; head = 0; }
+    storage_->tail = (storage_->tail + 1) & (N - 1);
+    storage_->count = static_cast<IndexType>(static_cast<size_t>(storage_->count) - 1);
+    if (storage_->count == 0) { storage_->tail = 0; storage_->head = 0; }
     RB_CRITICAL_EXIT();
     return 1;
 }
@@ -262,14 +301,14 @@ template <typename T, size_t N>
 size_t RingBuffer<T, N>::consume(size_t len) {
     if (len == 0) return 0;
     RB_CRITICAL_ENTER();
-    if (count == 0) {
+    if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
         return 0;
     }
-    size_t to_consume = RB_MIN(len, static_cast<size_t>(count));
-    tail = (tail + to_consume) & (N - 1);
-    count = static_cast<IndexType>(static_cast<size_t>(count) - to_consume);
-    if (count == 0) { tail = 0; head = 0; }
+    size_t to_consume = RB_MIN(len, static_cast<size_t>(storage_->count));
+    storage_->tail = (storage_->tail + to_consume) & (N - 1);
+    storage_->count = static_cast<IndexType>(static_cast<size_t>(storage_->count) - to_consume);
+    if (storage_->count == 0) { storage_->tail = 0; storage_->head = 0; }
     RB_CRITICAL_EXIT();
     return to_consume;
 }
@@ -278,9 +317,10 @@ size_t RingBuffer<T, N>::consume(size_t len) {
 template <typename T, size_t N>
 void RingBuffer<T, N>::clear() {
     RB_CRITICAL_ENTER();
-    head = 0;
-    tail = 0;
-    count = 0;
+    storage_->head = 0;
+    storage_->tail = 0;
+    storage_->count = 0;
+    storage_->magic = kStorageMagic;
     RB_CRITICAL_EXIT();
 }
 

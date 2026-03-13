@@ -80,14 +80,25 @@ void setup() {
 
 void loop() {
     if (dataReady) {
-        noInterrupts(); // Disable interrupts during buffer modification
-        uint8_t value;
-        if (myBuffer.pop(value)) {
+        while (true) {
+            uint8_t value;
+            size_t popped = 0;
+
+            noInterrupts(); // Disable interrupts while accessing the shared buffer
+            if (myBuffer.available() > 0) {
+                popped = myBuffer.pop(value);
+            } else {
+                dataReady = false;
+            }
+            interrupts(); // Re-enable interrupts before any serial output
+
+            if (!popped) {
+                break;
+            }
+
             Serial.print("Popped from ISR: ");
             Serial.println(value);
         }
-        dataReady = false;
-        interrupts(); // Re-enable interrupts
     }
 
     // Example: Save buffer before sleep

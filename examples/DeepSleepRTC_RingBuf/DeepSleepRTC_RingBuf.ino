@@ -6,28 +6,59 @@
 #endif
 
 #include "esp_sleep.h"
-#include "esp_system.h"
 
-// Store buffer in RTC memory (persists across deep sleep)
-RTC_DATA_ATTR RingBuffer<uint8_t, 16> myBuffer;
+constexpr size_t kBufferCapacity = 16;
+using RTCBuffer = RingBuffer<uint8_t, kBufferCapacity>;
+
+// Store raw ring buffer state in RTC memory so it survives deep sleep resets.
+RTC_DATA_ATTR RTCBuffer::Storage rtcBufferStorage;
+RTC_DATA_ATTR uint8_t nextValue = 1;
+
+RTCBuffer myBuffer(rtcBufferStorage, true);
+
+void printBufferContents() {
+    uint8_t snapshot[kBufferCapacity];
+    size_t count = myBuffer.peek(snapshot, myBuffer.available());
+
+    Serial.print("Buffer contains ");
+    Serial.print(count);
+    Serial.println(" value(s):");
+
+    if (count == 0) {
+        Serial.println("(empty)");
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        Serial.print(snapshot[i]);
+        Serial.print((i + 1) < count ? ' ' : '\n');
+    }
+}
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("RingBuffer Example - Survives Deep Sleep");
 
-    // Check if ESP woke from deep sleep
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
-        Serial.println("Woke from Deep Sleep!");
+    bool wokeFromDeepSleep = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+    if (!wokeFromDeepSleep) {
+        myBuffer.clear();
+        nextValue = 1;
+        Serial.println("Fresh start: cleared RTC ring buffer");
     } else {
-        Serial.println("Fresh Start");
+        Serial.println("Woke from deep sleep: restored RTC ring buffer");
     }
+
+    printBufferContents();
 }
 
 void loop() {
-    // Example: Push data before sleeping
-    myBuffer.push(99);
-    Serial.println("Pushed 99");
+    myBuffer.push(nextValue, true);
+    Serial.print("Pushed ");
+    Serial.println(nextValue);
+    ++nextValue;
+
+    printBufferContents();
 
     // Go to deep sleep
     Serial.println("Going to deep sleep...");

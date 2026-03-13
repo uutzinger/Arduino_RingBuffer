@@ -1,17 +1,22 @@
 # RingBuffer Library for Embedded Systems such as Arduino
 
-A lightweight, header-only circular buffer that mirrors the API in `RingBuffer.h`.
+A lightweight, header-only circular buffer for trivially copyable element types that mirrors the API in `RingBuffer.h`.
 
 ## Features
 
-- Template-based buffer supporting any `T` with a power-of-two capacity `N`.
+- Template-based buffer supporting trivially copyable `T` with a power-of-two capacity `N`.
 - ESP32-friendly: per-instance spinlocks guard critical sections when `ARDUINO_ARCH_ESP32` is defined.
 - Overload-aware helpers for single items or contiguous blocks when calling `push`, `pop`, `peek`, and `consume`.
 - Runtime helpers: `available()`, `capacity()`, and `clear()` provide buffer insights and maintenance.
 - Optional overwriting behaviour during `push` to discard oldest data when the buffer is full.
+- Optional caller-provided `Storage` lets the buffer wrap retained memory such as ESP32 `RTC_DATA_ATTR`.
+
+Supported element types are POD-like values such as `uint8_t`, `int16_t`, `float`, or simple structs that are trivially copyable. Types with non-trivial constructors, destructors, or internal ownership such as `String` or `std::string` are intentionally not supported.
 
 The class exposes the following methods:
 
+- `RingBuffer()`
+- `RingBuffer(Storage& storage, bool preserve = false)`
 - `push(const T& data, bool overwrite = false)`
 - `push(const T* data, size_t data_len, bool overwrite = false)`
 - `pop(T& output)`
@@ -23,6 +28,8 @@ The class exposes the following methods:
 - `available() const`
 - `capacity() const`
 - `clear()`
+
+For retained-memory use cases, declare `RingBuffer<T, N>::Storage` in the retained region and reconstruct `RingBuffer<T, N>` around it after reset.
 
 The buffer automatically resets `head` and `tail` indexes when emptied and maintains a bounded element count to prevent overflow.
 

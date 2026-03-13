@@ -6,6 +6,7 @@
 # Datatypes (KEYWORD1)
 #######################################
 RingBuffer	KEYWORD1
+Storage  	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
