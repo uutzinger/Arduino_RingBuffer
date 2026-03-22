@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026 Mar 22
+- Fixed template member definitions to remain valid when another library injects a conflicting `RingBuffer` symbol into scope.
+- Documented and shipped the global-qualification fix needed for builds that also pull in `audio_tools::RingBuffer`.
+
 ## 2026 Mar 13
 - Fixed overwrite handling for writes larger than the buffer capacity.
 - Fixed index sizing so full buffers work correctly at capacities such as 256.

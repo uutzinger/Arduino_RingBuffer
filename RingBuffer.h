@@ -31,6 +31,7 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
 
+#include <stddef.h>     // for size_t
 #include <string.h>     // for memcpy
 #include <stdint.h>     // for uint8_t, uint16_t
 #include <type_traits>  // for std::conditional
@@ -144,13 +145,13 @@ private:
 
 // Push a single element
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::push(const T& data, bool overwrite) {
+size_t ::RingBuffer<T, N>::push(const T& data, bool overwrite) {
     return push(&data, 1, overwrite);
 }
 
 // Push multiple elements
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
+size_t ::RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
     if (data_len == 0) return 0;
 
     // If overwrite is enabled and the caller provides more than the capacity,
@@ -200,13 +201,13 @@ size_t RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
 
 // Pop a single element
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::pop(T& output) {
+size_t ::RingBuffer<T, N>::pop(T& output) {
     return pop(&output, 1);
 }
 
 // Pop multiple elements
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::pop(T* output, size_t len) {
+size_t ::RingBuffer<T, N>::pop(T* output, size_t len) {
     if (len == 0) return 0;
     RB_CRITICAL_ENTER();
 
@@ -244,7 +245,7 @@ size_t RingBuffer<T, N>::pop(T* output, size_t len) {
 
 // Peek at single element
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::peek(T& output) const {
+size_t ::RingBuffer<T, N>::peek(T& output) const {
     RB_CRITICAL_ENTER();
     if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
@@ -257,7 +258,7 @@ size_t RingBuffer<T, N>::peek(T& output) const {
 
 // Peek at multiple elements
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::peek(T* output, size_t len) const {
+size_t ::RingBuffer<T, N>::peek(T* output, size_t len) const {
     if (len == 0) return 0; // Nothing to peek
     RB_CRITICAL_ENTER();
     if (storage_->count == 0) {
@@ -283,7 +284,7 @@ size_t RingBuffer<T, N>::peek(T* output, size_t len) const {
 
 // Consume a single element
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::consume() {
+size_t ::RingBuffer<T, N>::consume() {
     RB_CRITICAL_ENTER();
     if (storage_->count == 0) {
         RB_CRITICAL_EXIT();
@@ -298,7 +299,7 @@ size_t RingBuffer<T, N>::consume() {
 
 // Consume multiple elements
 template <typename T, size_t N>
-size_t RingBuffer<T, N>::consume(size_t len) {
+size_t ::RingBuffer<T, N>::consume(size_t len) {
     if (len == 0) return 0;
     RB_CRITICAL_ENTER();
     if (storage_->count == 0) {
@@ -315,7 +316,7 @@ size_t RingBuffer<T, N>::consume(size_t len) {
 
 // Clear the buffer
 template <typename T, size_t N>
-void RingBuffer<T, N>::clear() {
+void ::RingBuffer<T, N>::clear() {
     RB_CRITICAL_ENTER();
     storage_->head = 0;
     storage_->tail = 0;
