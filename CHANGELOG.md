@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.1
+- Builds on AVR (Arduino Uno): removed the dependency on `<type_traits>`, which avr-gcc does not ship (small internal `Conditional` and the compiler builtin `__is_trivially_copyable`).
+- Moved the host test to `extras/ringbuffer_host_test.cpp`. Left in the library root it was compiled as part of every sketch, which failed on targets without `<cstdint>`.
+
 ## 2.1.0
 - `push()` accepts an optional `size_t* overwritten` that reports how many elements the push lost (overwritten older data plus input that exceeded the capacity). The value is determined inside the push's critical section, so callers such as MPRBuffer can count overruns exactly instead of checking `available()` before pushing. Existing calls are unchanged.
 - Added host test for the lost-element count.

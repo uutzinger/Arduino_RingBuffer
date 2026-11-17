@@ -37,7 +37,6 @@
 #include <stddef.h>     // for size_t
 #include <string.h>     // for memcpy
 #include <stdint.h>     // for uint8_t, uint16_t
-#include <type_traits>  // for std::conditional
 
 #if defined(ARDUINO_ARCH_ESP32)
     # include "freertos/FreeRTOS.h"
@@ -54,16 +53,22 @@
 #  define RB_CRITICAL_EXIT()
 #endif
 
+// Minimal replacement for std::conditional: avr-gcc does not ship <type_traits>
+namespace rb_detail {
+template <bool Cond, typename A, typename B> struct Conditional { typedef A type; };
+template <typename A, typename B> struct Conditional<false, A, B> { typedef B type; };
+}  // namespace rb_detail
+
 template <typename T, size_t N>
 class RingBuffer {
 public:
-    static_assert(std::is_trivially_copyable<T>::value,
+    static_assert(__is_trivially_copyable(T),     // compiler builtin (GCC, Clang, MSVC), no <type_traits> needed
                   "RingBuffer requires trivially copyable element types");
 
     // Select optimal index type based on buffer size, including a full-buffer count.
-    using IndexType = typename std::conditional<
+    using IndexType = typename rb_detail::Conditional<
         (N <= UINT8_MAX), uint8_t,
-        typename std::conditional<(N <= UINT16_MAX), uint16_t, size_t>::type
+        typename rb_detail::Conditional<(N <= UINT16_MAX), uint16_t, size_t>::type
     >::type;
 
     struct Storage {
