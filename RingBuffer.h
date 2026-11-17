@@ -10,6 +10,9 @@
 // push
 //   Push data into the ring buffer
 //   If overwrite is true, older data is overwritten when buffer is full
+//   Optional 'overwritten' receives the number of elements lost by this push
+//   (older elements overwritten plus input elements dropped because they exceed the capacity),
+//   determined in the same critical section as the push
 // pop
 //   Pop data from the ring buffer
 // peek
@@ -85,8 +88,9 @@ public:
     // data: pointer to data that will be added to the buffer
     // data_len: number of data elements
     // overwrite: if true, older data is overwritten when buffer is full
-    size_t push(const T& data, bool overwrite = false);
-    size_t push(const T* data, size_t data_len, bool overwrite = false);
+    // overwritten: optional, set to the number of elements lost by this push (0 if none); set to 0 when push fails
+    size_t push(const T& data, bool overwrite = false, size_t* overwritten = nullptr);
+    size_t push(const T* data, size_t data_len, bool overwrite = false, size_t* overwritten = nullptr);
 
     // Pop a specified number of characters from the ring buffer
     size_t pop(T& output);
@@ -145,19 +149,22 @@ private:
 
 // Push a single element
 template <typename T, size_t N>
-size_t ::RingBuffer<T, N>::push(const T& data, bool overwrite) {
-    return push(&data, 1, overwrite);
+size_t ::RingBuffer<T, N>::push(const T& data, bool overwrite, size_t* overwritten) {
+    return push(&data, 1, overwrite, overwritten);
 }
 
 // Push multiple elements
 template <typename T, size_t N>
-size_t ::RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) {
+size_t ::RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite, size_t* overwritten) {
+    if (overwritten) *overwritten = 0;
     if (data_len == 0) return 0;
+    size_t lost = 0;
 
     // If overwrite is enabled and the caller provides more than the capacity,
     // only the newest N elements can remain in the buffer.
     if (overwrite && data_len > N) {
-        data += data_len - N;
+        lost = data_len - N;                    // input that can never fit
+        data += lost;
         data_len = N;
     }
 
@@ -172,6 +179,7 @@ size_t ::RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) 
     if (data_len > available_space) {
         // Overwriting: advance tail to free up space
         size_t overflow = data_len - available_space;
+        lost += overflow;
         storage_->tail = (storage_->tail + overflow) & (N - 1);
     }
 
@@ -196,6 +204,7 @@ size_t ::RingBuffer<T, N>::push(const T* data, size_t data_len, bool overwrite) 
         RB_MIN(static_cast<size_t>(N), static_cast<size_t>(storage_->count) + data_len));
 
     RB_CRITICAL_EXIT();
+    if (overwritten) *overwritten = lost;
     return data_len;
 }
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.0
+- `push()` accepts an optional `size_t* overwritten` that reports how many elements the push lost (overwritten older data plus input that exceeded the capacity). The value is determined inside the push's critical section, so callers such as MPRBuffer can count overruns exactly instead of checking `available()` before pushing. Existing calls are unchanged.
+- Added host test for the lost-element count.
+
 ## 2026 Mar 22
 - Fixed template member definitions to remain valid when another library injects a conflicting `RingBuffer` symbol into scope.
 - Documented and shipped the global-qualification fix needed for builds that also pull in `audio_tools::RingBuffer`.

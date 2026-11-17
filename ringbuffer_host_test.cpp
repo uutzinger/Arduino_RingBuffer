@@ -121,6 +121,29 @@ bool testRetainedStorage() {
     }
 }
 
+bool testOverwrittenCount() {
+    RingBuffer<uint8_t, 4> buffer;
+    size_t lost = 99;
+    const uint8_t v[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+    bool ok = check(buffer.push(v[0], true, &lost) == 1 && lost == 0, "empty buffer: nothing lost");
+    ok = check(buffer.push(v, 3, true, &lost) == 3 && lost == 0, "fits exactly: nothing lost") && ok;
+    ok = check(buffer.available() == 4, "buffer full") && ok;
+    ok = check(buffer.push(v[3], true, &lost) == 1 && lost == 1, "single push on full buffer loses one") && ok;
+    ok = check(buffer.push(v, 3, true, &lost) == 3 && lost == 3, "block push on full buffer loses three") && ok;
+    ok = check(buffer.push(v, 10, true, &lost) == 4 && lost == 10, "oversized push: 4 old + 6 input lost") && ok;
+
+    uint8_t out[4] = {};
+    ok = check(buffer.pop(out, 4) == 4 && out[0] == 7 && out[3] == 10, "newest elements retained") && ok;
+
+    buffer.push(v, 4, true);
+    lost = 99;
+    ok = check(buffer.push(v[0], false, &lost) == 0 && lost == 0, "rejected push (no overwrite) reports 0 lost") && ok;
+    ok = check(buffer.push(v, 0, true, &lost) == 0 && lost == 0, "zero length push reports 0 lost") && ok;
+    ok = check(buffer.push(v[0], true) == 1, "pointer argument stays optional") && ok;
+    return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -133,6 +156,7 @@ int main() {
     ok = testStructType() && ok;
     ok = testSingleStructPushPop() && ok;
     ok = testRetainedStorage() && ok;
+    ok = testOverwrittenCount() && ok;
 
     if (!ok) {
         return EXIT_FAILURE;

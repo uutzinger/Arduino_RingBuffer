@@ -17,8 +17,8 @@ The class exposes the following methods:
 
 - `RingBuffer()`
 - `RingBuffer(Storage& storage, bool preserve = false)`
-- `push(const T& data, bool overwrite = false)`
-- `push(const T* data, size_t data_len, bool overwrite = false)`
+- `push(const T& data, bool overwrite = false, size_t* overwritten = nullptr)`
+- `push(const T* data, size_t data_len, bool overwrite = false, size_t* overwritten = nullptr)`
 - `pop(T& output)`
 - `pop(T* output, size_t len)`
 - `peek(T& output) const`
@@ -28,6 +28,8 @@ The class exposes the following methods:
 - `available() const`
 - `capacity() const`
 - `clear()`
+
+`overwritten` is optional. If given, it receives the number of elements lost by this push: older elements that were overwritten plus input elements dropped because a single push was larger than the capacity. It is computed inside the same critical section as the push, so it is exact even when another task pops concurrently. It is 0 if the push was rejected.
 
 For retained-memory use cases, declare `RingBuffer<T, N>::Storage` in the retained region and reconstruct `RingBuffer<T, N>` around it after reset.
 
